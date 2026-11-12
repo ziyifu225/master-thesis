@@ -1,6 +1,150 @@
 % This file was created with JabRef 2.9.2.
 % Encoding: UTF-8
 
+@INPROCEEDINGS{nelson2005migration,
+    author = {Michael Nelson and Beng-Hong Lim and Greg Hutchins},
+    title = {Fast Transparent Migration for Virtual Machines},
+    booktitle = {2005 USENIX Annual Technical Conference (USENIX ATC 05)},
+    date = {2005-04},
+    pages = {391--394},
+    publisher = {USENIX Association},
+    location = {Anaheim, CA, USA},
+    url = {https://www.usenix.org/conference/2005-usenix-annual-technical-conference/fast-transparent-migration-virtual-machines}
+}
+
+@INPROCEEDINGS {clark2005migration,
+    author = {Christopher Clark and Keir Fraser and Steven Hand and Jacob Gorm Hansen and Eric Jul and Christian Limpach and Ian Pratt and Andrew Warfield},
+    title = {Live Migration of Virtual Machines},
+    booktitle = {2nd Symposium on Networked Systems Design \& Implementation (NSDI 05)},
+    year = {2005},
+    address = {Boston, MA},
+    url = {https://www.usenix.org/conference/nsdi-05/live-migration-virtual-machines},
+    publisher = {USENIX Association},
+    month = may
+}
+
+@ARTICLE{hines2009postcopy,
+    author = {Michael R. Hines and Umesh Deshpande and Kartik Gopalan},
+    title = {Post-copy Live Migration of Virtual Machines},
+    journaltitle = {ACM SIGOPS Operating Systems Review},
+    date = {2009-07},
+    volume = {43},
+    number = {3},
+    pages = {14--26},
+    doi = {10.1145/1618525.1618528},
+    url = {https://kartikgopalan.github.io/publications/hines09postcopy_osr.pdf}
+}
+
+@ONLINE{qemu-migration-framework,
+    author = {{QEMU Project}},
+    title = {Migration Framework},
+    url = {https://www.qemu.org/docs/master/devel/migration/main.html},
+    urldate = {2026-11-09}
+}
+
+@ONLINE{qemu-cpr,
+    author = {{QEMU Project}},
+    title = {{CheckPoint and Restart (CPR)}},
+    url = {https://www.qemu.org/docs/master/devel/migration/CPR.html},
+    urldate = {2026-11-09}
+}
+
+@ONLINE{qemu-vfio-migration,
+    author = {{QEMU Project}},
+    title = {{VFIO} Device Migration},
+    url = {https://www.qemu.org/docs/master/devel/migration/vfio.html},
+    urldate = {2026-11-09}
+}
+
+@ONLINE{qemu-vhost-user,
+    author = {{QEMU Project}},
+    title = {Vhost-user Protocol},
+    url = {https://www.qemu.org/docs/master/interop/vhost-user.html},
+    urldate = {2026-11-09}
+}
+
+@MANUAL{linux-memfd,
+    label = {memfd},
+    organization = {{Linux man-pages project}},
+    title = {{memfd\_create(2)}: Anonymous Files},
+    url = {https://man7.org/linux/man-pages/man2/memfd_create.2.html},
+    urldate = {2026-11-09}
+}
+
+@MANUAL{linux-unix,
+    label = {unix},
+    organization = {{Linux man-pages project}},
+    title = {{unix(7)}: Sockets for Local Interprocess Communication},
+    url = {https://man7.org/linux/man-pages/man7/unix.7.html},
+    urldate = {2026-11-09}
+}
+
+@INPROCEEDINGS{kivity2007kvm,
+    author = {Avi Kivity and Yaniv Kamay and Dor Laor and Uri Lublin and Anthony Liguori},
+    title = {{kvm}: the {Linux} Virtual Machine Monitor},
+    booktitle = {Proceedings of the Linux Symposium},
+    volume = {1},
+    date = {2007-06},
+    pages = {225--230},
+    location = {Ottawa, Ontario, Canada},
+    url = {https://www.kernel.org/doc/ols/2007/ols2007v1-pages-225-230.pdf}
+}
+
+@INPROCEEDINGS{santos2008io,
+    author = {Jose Renato Santos and Yoshio Turner and G. (John) Janakiraman and Ian Pratt},
+    title = {Bridging the Gap between Software and Hardware Techniques for {I/O} Virtualization},
+    booktitle = {2008 USENIX Annual Technical Conference (USENIX ATC 08)},
+    date = {2008-06},
+    pages = {29--42},
+    publisher = {USENIX Association},
+    location = {Boston, MA, USA},
+    url = {https://www.usenix.org/conference/2008-usenix-annual-technical-conference/bridging-gap-between-software-and-hardware}
+}
+
+@MISC{johnson2021vfio,
+    author = {John Johnson and Jag Raman and Elena Ufimtseva},
+    title = {{VFIO-User}: Remote Device Emulation using {VFIO}},
+    date = {2021-09},
+    howpublished = {Presentation at KVM Forum 2021},
+    note = {Conference slides},
+    url = {https://gitlab.com/qemu-project/kvm-forum/-/raw/main/_attachments/2021/Johnson_Raman_Ufimtseva_Vfio-user.pdf}
+}
+
+@ONLINE{kvm-api,
+    author = {{Linux Kernel Developers}},
+    title = {The Definitive {KVM} ({Kernel-based Virtual Machine}) {API} Documentation},
+    url = {https://www.kernel.org/doc/html/latest/virt/kvm/api.html},
+    urldate = {2026-11-05}
+}
+
+@ONLINE{qemu-system-introduction,
+    author = {{QEMU Project}},
+    title = {{QEMU} System Emulation: Introduction},
+    url = {https://www.qemu.org/docs/master/system/introduction.html},
+    urldate = {2026-11-05}
+}
+
+@ONLINE{cloud-hypervisor,
+    author = {{Cloud Hypervisor Authors}},
+    title = {{Cloud Hypervisor}},
+    url = {https://github.com/cloud-hypervisor/cloud-hypervisor},
+    urldate = {2026-11-05}
+}
+
+@ONLINE{qemu-multiprocess,
+    author = {{QEMU Project}},
+    title = {Multi-process {QEMU}},
+    url = {https://www.qemu.org/docs/master/devel/multi-process.html},
+    urldate = {2026-11-05}
+}
+
+@ONLINE{linux-vfio,
+    author = {{Linux Kernel Developers}},
+    title = {{VFIO}: {Virtual Function I/O}},
+    url = {https://www.kernel.org/doc/html/latest/driver-api/vfio.html},
+    urldate = {2026-11-05}
+}
+
 @INPROCEEDINGS{becher04:_feurig_hacken_mit_firew,
     author = {Michael Becher and Maximillian Dornseif},
     title = {{Feuriges Hacken - Spaß mit Firewire}},
@@ -8,12 +152,15 @@
     date = {2004-12}
 }
 
-@CONFERENCE{bellard2005qfa,
+@INPROCEEDINGS{bellard2005qfa,
     author = {Fabrice Bellard},
-    title = {{QEMU, a fast and portable dynamic translator}},
-    booktitle = {Proceedings of the USENIX Annual Technical Conference, FREENIX Track},
-    date = {2005},
-    pages = {41--46}
+    title = {{QEMU}, a Fast and Portable Dynamic Translator},
+    booktitle = {Proceedings of the FREENIX Track: 2005 USENIX Annual Technical Conference},
+    date = {2005-04},
+    pages = {41--46},
+    publisher = {USENIX Association},
+    location = {Anaheim, CA, USA},
+    url = {https://www.usenix.org/conference/2005-usenix-annual-technical-conference/qemu-fast-and-portable-dynamic-translator}
 }
 
 @INPROCEEDINGS{boileau06,

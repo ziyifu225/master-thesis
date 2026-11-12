@@ -1,0 +1,217 @@
+\chapter{Basics and state of the art}
+\label{sec:state}
+
+% Hier werden zwei wesentliche Aufgaben erledigt:
+
+% 1. Der Leser muß alles beigebracht bekommen, was er zum Verständnis
+% der späteren Kapitel braucht. Insbesondere sind in unserem Fach die
+% Systemvoraussetzungen zu klären, die man später benutzt. Zulässig ist
+% auch, daß man hier auf Tutorials oder Ähnliches verweist, die hier auf
+% dem Netz zugänglich sind.
+
+% 2. Es muß klar werden, was anderswo zu diesem Problem gearbeitet
+% wird. Insbesondere sollen natürlich die Lücken der anderen klar
+% werden. Warum ist die eigene Arbeit, der eigene Ansatz wichtig, um
+% hier den Stand der Technik weiterzubringen? Dieses Kapitel wird von
+% vielen Lesern übergangen (nicht aber vom Gutachter ;-), auch später
+% bei Veröffentlichungen ist "Related Work" eine wichtige Sache.
+
+% Viele Leser stellen dann später fest, daß sie einige der Grundlagen
+% doch brauchen und blättern zurück. Deshalb ist es gut,
+% Rückwärtsverweise in späteren Kapiteln zu haben, und zwar so, daß man
+% die Abschnitte, auf die verwiesen wird, auch für sich lesen
+% kann. Diese Kapitel kann relativ lang werden, je größer der Kontext
+% der Arbeit, desto länger. Es lohnt sich auch! Den Text kann man unter
+% Umständen wiederverwenden, indem man ihn als "Tutorial" zu einem
+% Gebiet auch dem Netz zugänglich macht.
+
+% Dadurch gewinnt man manchmal wertvolle Hinweise von Kollegen. Dieses
+% Kapitel wird in der Regel zuerst geschrieben und ist das Einfachste
+% (oder das Schwerste weil erste).
+
+\section{Virtual Machines and Device Models}
+\label{sec:state:virtualization}
+
+Running a guest operating system requires both an execution environment and
+access to devices. A virtual machine (VM) provides these resources in the 
+form of a virtual computer, while a virtual machine monitor (VMM) is responsible 
+for creating and managing this environment.
+On Linux, these responsibilities are typically shared between the Kernel-based 
+Virtual Machine (KVM) and a userspace VMM. KVM provides hardware-assisted CPU 
+and memory virtualization~\cite{kivity2007kvm}, while the userspace VMM manages 
+the VM's lifecycle and coordinates access to devices.
+QEMU and Cloud Hypervisor are examples of userspace VMMs that use KVM~\cite{johnson2021vfio,cloud-hypervisor}.
+
+In addition to managing the VM's lifecycle, a userspace VMM is responsible for 
+providing device access to the guest. This can be achieved through two main approaches: 
+\emph{device emulation}, where device behavior is implemented in software, and 
+\emph{device passthrough}, where a physical device is assigned to the VM~\cite{bellard2005qfa,santos2008io}. 
+In both cases, the guest interacts with devices through their exposed interfaces, 
+but the underlying device operations are handled differently.
+
+A separate consideration is where the software responsible for implementing or 
+managing a device runs. When a device is supported by a userspace \emph{device model}, 
+this software can run either within the VMM process as an \emph{internal device model}, 
+or in a separate process that communicates with the VMM as an 
+\emph{external device model}~\cite{johnson2021vfio}. In the latter case, migration-relevant 
+device state may reside outside the VMM process. Migrating such a VM therefore 
+requires coordinating this external state with the rest of the VM state to ensure 
+that the guest can resume execution correctly.
+
+\section{Virtual Machine Live Migration}
+\label{sec:state:live-migration}
+
+Live migration moves a running VM from a VMM instance to another one while minimizing 
+interruptions to the guest machine~\cite{clark2005migration}. In order to ensure that 
+execution resumes correctly, the destination must restore a virtual machine state 
+that matches the execution state of the source. Therefore, migration must 
+coordinate state transitions with the handoff of execution.
+To explain this coordination, the section first follows the VM through the
+migration lifecycle. It then examines how memory becomes available at the
+destination and how device activity remains consistent with that memory.
+
+\subsection{VM State and Migration Lifecycle}
+\label{sec:state:migration-lifecycle}
+
+VM migration moves a running VM from one VMM instance, called the \emph{source}, 
+to another, called the \emph{destination}. The migration process involves 
+preparing the destination, transferring the necessary \emph{VM state}, and coordinating 
+the transition of guest execution from the source to the destination~\cite{qemu-migration-framework}.
+
+The VM state consists of three main components: virtual CPU state, guest 
+memory, and device state, as illustrated in Figure~\ref{fig:migration-overview}.
+CPU state contains the registers and execution context needed to resume 
+guest execution, while guest memory holds the data used by the operating 
+system and its applications. Device state includes device configuration 
+and the status of ongoing I/O operations~\cite{nelson2005migration}. 
+For the guest to resume correctly, these components must form a consistent 
+state at the destination. For example, information about pending I/O 
+requests maintained by a device must be consistent with the corresponding 
+data structures in guest memory.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{images/vm-migration.png}
+    \caption[VM state and execution handover]{VM migration from a source VMM
+    to a destination VMM, preserving CPU, memory, and device state to resume
+    the guest.}
+    \label{fig:migration-overview}
+\end{figure}
+
+Preserving these relationships requires coordination between the source 
+and destination throughout the migration process. The destination is 
+first prepared with a compatible VM environment and access to the required 
+resources. The source and destination then coordinate the transfer of VM 
+state and the handover of guest execution. As part of this handover, 
+execution stops at the source and resumes at the destination once the 
+necessary state has been restored~\cite{nelson2005migration}.
+
+The source and destination VMM instances may run on the same or different 
+physical hosts. When both instances run on the same host, this is referred 
+to as \emph{same-host migration}; when they run on different hosts, it is 
+called \emph{cross-host migration}~\cite{clark2005migration,qemu-cpr}. This 
+distinction is particularly relevant to guest memory. In same-host migration, 
+the destination may be able to reuse the existing memory backing, whereas 
+cross-host migration requires the guest memory to be made available on another machine.
+
+\subsection{Memory Transfer and Resource Reuse}
+\label{sec:state:memory-migration}
+
+Another important aspect of VM migration is when guest memory is transferred 
+relative to the handover of execution. Two common approaches are \emph{pre-copy} 
+and \emph{post-copy} migration~\cite{clark2005migration,hines2009postcopy}.
+
+In \emph{pre-copy} migration, guest memory is copied to the destination 
+while the VM continues running on the source. Since the guest may modify 
+memory pages that have already been copied, the source tracks these changes 
+as \emph{dirty pages} and transfers the modified pages again in subsequent 
+rounds. Once the remaining dirty data is sufficiently small, the source 
+pauses guest execution and transfers the remaining dirty pages along with 
+the final CPU and device state. The destination then restores the VM state 
+and resumes guest execution~\cite{clark2005migration}.
+
+In \emph{post-copy} migration, the VM resumes execution at the destination 
+before all guest memory has been transferred. The source first pauses guest 
+execution and transfers the CPU and device state required for the destination 
+to resume the VM. As the guest continues running, accesses to memory pages 
+that have not yet been transferred trigger requests to retrieve them from the 
+source. Meanwhile, the remaining pages can also be transferred in the 
+background~\cite{hines2009postcopy}.
+
+Pre-copy and post-copy primarily describe the timing of memory transfer 
+relative to guest execution. A separate consideration is whether guest 
+memory must be copied or can be reused at the destination. In cross-host 
+migration, the destination typically receives a copy of guest memory because 
+the two hosts have separate memory resources. In same-host migration, memory 
+can also be copied, but an alternative is to reuse the existing memory 
+backing object. This allows the destination to access guest RAM without 
+copying its contents. Such reuse requires the backing object to remain 
+available and accessible to the destination; running both VMM instances on 
+the same host does not automatically provide this access~\cite{clark2005migration,qemu-cpr}.
+
+One way to implement this reuse is to back guest RAM with a file that both 
+VMM processes can map into their address spaces. On Linux, an anonymous 
+memory-backed file can be created using \emph{memfd}, allowing guest memory 
+to be shared without a persistent file on disk~\cite{linux-memfd}. The source 
+can pass a file descriptor referring to this backing object to the destination 
+through a Unix domain socket~\cite{linux-unix}. The destination can then map 
+the same object into its address space, gaining access to the existing guest 
+memory without copying its contents. While memory reuse avoids copying guest 
+RAM, device state must still be preserved and restored to allow the guest to 
+continue its I/O operations correctly.
+
+\subsection{Device State and Migration Consistency}
+\label{sec:state:device-migration}
+
+Access to guest memory alone, however, is not sufficient to restore device 
+operation. In addition to configuration registers, a device may maintain 
+queue positions, pending notifications, and the status of outstanding I/O 
+requests. Some of this state is stored outside guest RAM~\cite{qemu-migration-framework,
+qemu-vhost-user}. For example, a request buffer in guest memory does not 
+indicate whether the device has already processed the request or still needs 
+to do so. Without this information, the destination may repeat an already 
+completed operation or leave an unfinished one unprocessed.
+
+Ensuring that device operations continue correctly after migration therefore 
+involves three key aspects: \emph{state preservation}, \emph{execution 
+coordination}, and \emph{device--memory consistency}.
+
+The first aspect, state preservation, requires the destination to 
+restore the device state needed to continue operation. Depending on the 
+device, outstanding I/O requests may be completed at the source before the 
+handover, or their state may be saved and restored so that processing can 
+continue at the destination~\cite{qemu-vhost-user}.
+
+The second aspect, execution coordination, concerns when device activity 
+is stopped at the source and resumed at the destination. Pausing the virtual 
+CPUs alone is not sufficient, as physical devices and I/O workers may continue 
+processing requests independently of guest execution. The source must therefore 
+quiesce device activity before capturing the final device state, while the 
+destination must restore this state before resuming device operations~\cite{qemu-vfio-migration}.
+
+The third aspect, device--memory consistency, concerns how device 
+activity affects guest memory during migration. Devices can modify guest 
+memory through direct memory access (DMA), independently of virtual CPU 
+execution. When memory is copied, a DMA write to an already transferred 
+page can leave the destination with outdated data. Such modifications must 
+therefore be tracked or otherwise accounted for before the final memory 
+state is established~\cite{qemu-vfio-migration}. Although memory reuse avoids 
+this problem of outdated copies, device access must still be coordinated with 
+the migration handover to maintain consistency between guest memory and device state.
+
+How these requirements are met also depends on where device state and I/O 
+processing are managed. For an internal device model, the VMM can coordinate 
+device activity and state save/restore operations through its own migration 
+framework~\cite{qemu-migration-framework}. With an external backend, however, 
+part of the device state and I/O processing resides in a separate 
+process~\cite{qemu-multiprocess,qemu-vhost-user}. Saving the VMM's state alone 
+is therefore insufficient, as migration must also coordinate backend activity 
+and preserve the state maintained outside the VMM. This coordination is necessary 
+whether the destination reuses an existing backend or restores device state in a 
+separate backend.
+
+\cleardoublepage
+
+%%% Local Variables:
+%%% TeX-master: "diplom"
+%%% End:
