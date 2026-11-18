@@ -1,6 +1,52 @@
 % This file was created with JabRef 2.9.2.
 % Encoding: UTF-8
 
+@MISC{hajnoczi2021device-migration,
+    author = {Stefan Hajnoczi},
+    title = {Live Migrating {VFIO}, vhost-user, and vfio-user Devices},
+    date = {2021-09},
+    howpublished = {Presentation at KVM Forum 2021},
+    note = {Conference slides},
+    url = {https://vmsplice.net/~stefan/stefanha-kvm-forum-2021.pdf}
+}
+
+@ONLINE{libvfio-user-overview,
+    author = {{libvfio-user Developers}},
+    title = {libvfio-user: Framework for Emulating Devices in Userspace},
+    url = {https://github.com/nutanix/libvfio-user/blob/master/README.md},
+    urldate = {2026-11-12}
+}
+
+@MANUAL{vfio-user-spec,
+    author = {{QEMU Project}},
+    title = {vfio-user Protocol Specification},
+    url = {https://www.qemu.org/docs/master/interop/vfio-user.html},
+    urldate = {2026-11-12}
+}
+
+@ONLINE{linux-vfio-uapi,
+    author = {{Linux Kernel Developers}},
+    title = {{VFIO API} Definition: Device Migration and {DMA} Logging},
+    note = {include/uapi/linux/vfio.h},
+    url = {https://github.com/torvalds/linux/blob/master/include/uapi/linux/vfio.h},
+    urldate = {2026-11-12}
+}
+
+@ONLINE{libvfio-user-memory,
+    author = {{libvfio-user Developers}},
+    title = {Accessing Memory with libvfio-user},
+    url = {https://github.com/nutanix/libvfio-user/blob/master/docs/memory-mapping.md},
+    urldate = {2026-11-12}
+}
+
+@ONLINE{libvfio-user-migration,
+    author = {{libvfio-user Developers}},
+    title = {Device Migration Implementation},
+    note = {lib/migration.c},
+    url = {https://github.com/nutanix/libvfio-user/blob/master/lib/migration.c},
+    urldate = {2026-11-12}
+}
+
 @INPROCEEDINGS{nelson2005migration,
     author = {Michael Nelson and Beng-Hong Lim and Greg Hutchins},
     title = {Fast Transparent Migration for Virtual Machines},

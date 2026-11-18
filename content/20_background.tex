@@ -210,6 +210,162 @@ and preserve the state maintained outside the VMM. This coordination is necessar
 whether the destination reuses an existing backend or restores device state in a 
 separate backend.
 
+\section{VFIO and vfio-user for External Device Models}
+\label{sec:state:vfio-user}
+
+VFIO and vfio-user provide related interfaces through which userspace VMMs
+manage devices. Their relationship explains how a VMM can retain control of
+the guest-facing device while a separate backend implements its behavior.
+This section first introduces the VFIO interface and its adaptation in
+vfio-user, then follows device operation across the client--server boundary.
+It finally explains the protocol facilities for controlling migration,
+transferring device state, and tracking DMA writes.
+
+\subsection{From VFIO to vfio-user}
+\label{sec:state:vfio-interface}
+
+Device passthrough requires a userspace VMM to configure and manage access 
+to physical hardware. On Linux, Virtual Function I/O (VFIO) provides a kernel 
+interface for this purpose. Through VFIO, the VMM can access device regions, 
+configure interrupts, and establish DMA mappings that allow the device to 
+access guest memory. The kernel uses mechanisms such as the I/O memory 
+management unit (IOMMU) to restrict device access to permitted memory 
+regions~\cite{linux-vfio}.
+
+vfio-user adapts this device-access model to devices implemented in a 
+separate userspace process. Instead of interacting with a device through 
+the kernel VFIO interface, the VMM communicates with a vfio-user server over 
+a socket. The protocol retains VFIO concepts such as device regions, interrupts, 
+and DMA access, while the server implements the device's behavior and maintains 
+its internal state~\cite{johnson2021vfio}. Since vfio-user does not require a 
+physical VFIO device, the server can also implement a virtual device entirely 
+in software~\cite{libvfio-user-overview}. This separation allows the VMM to 
+provide device access to the guest while the device implementation resides in 
+an external backend.
+
+\subsection{Client--Server Architecture and Device Operation}
+\label{sec:state:vfio-user-architecture}
+
+The separation between the VMM and the device implementation in vfio-user
+follows a client--server architecture, as illustrated in
+Figure~\ref{fig:vfio-user-architecture}. The VMM acts as the \emph{client},
+while the external backend combines a vfio-user \emph{server} with the
+device model. The server handles protocol communication, while the device
+model implements device behavior. After establishing a connection over a
+UNIX domain socket, the client negotiates the protocol version and
+capabilities, then queries the device's PCI regions and interrupt
+capabilities. The VMM uses this information to present the device to the
+guest~\cite{johnson2021vfio,vfio-user-spec}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\linewidth]{images/vfio-user-architecture.pdf}
+    \caption[vfio-user client--server architecture]{The VMM acts as the
+    vfio-user client, while the external device backend implements the
+    server and device model.}
+    \label{fig:vfio-user-architecture}
+\end{figure}
+
+Once the guest begins using the device, the client forwards accesses that 
+require device model processing to the server. These accesses may initiate 
+I/O requests, for which the backend needs to read request descriptors and 
+exchange data with guest memory. To enable this access, the client provides 
+the server with information about the memory regions available for DMA and, 
+where supported, file descriptors that allow the backend to map these regions 
+directly. Alternatively, the backend can access guest memory through vfio-user 
+protocol messages. After completing a request, the backend can notify the guest 
+through interrupts configured by the client~\cite{vfio-user-spec,libvfio-user-memory}.
+
+Handling these requests involves more than accessing their descriptors and 
+data buffers in guest memory. As the device model processes I/O, it may also 
+maintain register values, queue positions, and the progress of outstanding 
+requests within the backend process~\cite{qemu-multiprocess,hajnoczi2021device-migration}. 
+This state is not automatically preserved when the VMM saves its own state 
+and guest memory during migration.
+
+\subsection{Protocol Support for Device Migration}
+\label{sec:state:vfio-user-migration}
+
+To support migration of an externally implemented device, vfio-user provides 
+three mechanisms: migration state control, device-state transfer, and DMA 
+dirty logging.
+
+Migration state control allows the client to coordinate device activity with 
+the migration process. The client first queries the server's migration 
+capabilities, which depend on the device implementation. It then requests 
+state transitions through \texttt{VFIO\_USER\_DEVICE\_FEATURE}, using the 
+\texttt{VFIO\_DEVICE\_FEATURE\_MIG\_DEVICE\_STATE} feature. A successful reply 
+confirms that the server has completed the requested transition, allowing 
+the VMM to proceed with the device in the requested state. Table~\ref{tab:vfio-user-migration-states} 
+summarizes the main states and their roles during migration
+~\cite{vfio-user-spec,linux-vfio-uapi}.
+
+\begin{table}[htbp]
+    \centering
+    \begin{tabular}{@{}lp{0.67\linewidth}@{}}
+        \toprule
+        \textbf{State} & \textbf{Role during migration} \\
+        \midrule
+        \texttt{RUNNING} & The device operates normally. \\
+        \texttt{STOP} & Device execution stops and its state no longer advances. \\
+        \texttt{STOP\_COPY} & The device remains stopped while exporting its state. \\
+        \texttt{RESUMING} & The device loads incoming state without resuming execution. \\
+        \texttt{PRE\_COPY} & The device can export state while continuing to operate. \\
+        \bottomrule
+    \end{tabular}
+    \caption[vfio-user device migration states]{Device migration states used
+    by vfio-user. \texttt{PRE\_COPY} requires advertised device support.}
+    \label{tab:vfio-user-migration-states}
+\end{table}
+
+These states also determine when device-state transfer can take place. A 
+source backend may export its internal state while operating in the optional 
+\texttt{PRE\_COPY} state, but it must stop device execution before exporting 
+its final state in \texttt{STOP\_COPY}. At the destination, the backend imports 
+the state in \texttt{RESUMING} and returns to \texttt{STOP} before the client 
+allows it to enter \texttt{RUNNING}, as illustrated in steps~2--4 of
+Figure~\ref{fig:vfio-user-migration-sequence}~\cite{linux-vfio-uapi}.
+
+In step~3 of Figure~\ref{fig:vfio-user-migration-sequence}, the source
+client reads the device state through \texttt{VFIO\_USER\_MIG\_DATA\_READ}. 
+The source VMM transfers this data to the destination VMM, which supplies 
+it to the destination backend through \texttt{VFIO\_USER\_MIG\_DATA\_WRITE}. 
+The backend determines how to save and restore its device-specific state, 
+while the VMM coordinates the transfer between source and destination~\cite{vfio-user-spec}.
+
+Beyond preserving device state, migration must also account for changes that 
+the backend makes to guest memory through DMA. In particular, writes through 
+shared memory mappings may not be captured by the VMM's tracking of virtual 
+CPU writes. The client can separately query whether the server supports DMA 
+dirty logging and, when available, enable logging and retrieve bitmaps of
+pages modified by DMA. Steps~1 and~2 of
+Figure~\ref{fig:vfio-user-migration-sequence} show logging setup and a final
+bitmap query after the device stops. The VMM can incorporate these pages into memory pre-copy 
+alongside pages modified by the virtual CPUs. Before completing the handover, 
+it must also account for device writes up to the point where device activity 
+stops, ensuring that the destination receives a consistent memory state~\cite{vfio-user-spec,qemu-vfio-migration}.
+
+Figure~\ref{fig:vfio-user-migration-sequence} illustrates how these
+device-level operations fit into the overall VM migration process.
+Although vfio-user provides interfaces for migration state control,
+device-state transfer, and DMA dirty logging, the VMM determines how
+to integrate these mechanisms with CPU execution, guest-memory handling,
+and destination resumption. This integration depends on the VMM's
+migration architecture and how it coordinates external device backends.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{images/vfio-user-migration-sequence.pdf}
+    \caption[VM migration with vfio-user]{VM migration with a vfio-user device, 
+    showing a simplified stop-and-copy sequence. Boxes indicate local VMM actions, 
+    dashed arrows represent selected replies, and asterisks mark optional DMA dirty 
+    logging. Device-state read and write operations may repeat until the transfer 
+    is complete. Guest-memory handling is shown schematically and may involve memory 
+    transfer or reuse, depending on the migration method.}
+    \label{fig:vfio-user-migration-sequence}
+\end{figure}
+
+
 \cleardoublepage
 
 %%% Local Variables:

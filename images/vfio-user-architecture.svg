@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440pt" height="168pt" viewBox="0 0 440 168">
+  <title>vfio-user client-server architecture</title>
+  <desc>The VMM and external device backend occupy two aligned process boxes. The VMM is the vfio-user client; the backend implements the server and device model. A bidirectional connector represents the vfio-user protocol. The figure retains only these architectural roles.</desc>
+  <defs>
+    <marker id="arrow-end" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L6 3 L0 6 Z" fill="#333333"/></marker>
+    <marker id="arrow-start" markerWidth="6" markerHeight="6" refX="0" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M6 0 L0 3 L6 6 Z" fill="#333333"/></marker>
+  </defs>
+  <rect width="440" height="168" fill="white"/>
+  <g font-family="sans-serif" fill="#171717">
+    <g id="client" text-anchor="middle">
+      <rect x="75" y="10" width="290" height="54" rx="2" fill="#f7f7f7" stroke="#555555" stroke-width="0.8"/>
+      <text x="220" y="31" font-size="12" font-weight="600">VMM</text>
+      <text x="220" y="49" font-size="10.5">vfio-user Client</text>
+    </g>
+    <g id="protocol">
+      <path d="M220 64 V104" fill="none" stroke="#333333" stroke-width="1.1" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+      <text x="238" y="88" font-size="10.5">vfio-user Protocol</text>
+    </g>
+    <g id="server" text-anchor="middle">
+      <rect x="75" y="104" width="290" height="54" rx="2" fill="#f7f7f7" stroke="#555555" stroke-width="0.8"/>
+      <text x="220" y="125" font-size="12" font-weight="600">External Device Backend</text>
+      <text x="220" y="143" font-size="10.5">vfio-user Server + Device Model</text>
+    </g>
+  </g>
+</svg>
