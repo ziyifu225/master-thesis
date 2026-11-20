@@ -213,13 +213,12 @@ separate backend.
 \section{VFIO and vfio-user for External Device Models}
 \label{sec:state:vfio-user}
 
-VFIO and vfio-user provide related interfaces through which userspace VMMs
-manage devices. Their relationship explains how a VMM can retain control of
-the guest-facing device while a separate backend implements its behavior.
-This section first introduces the VFIO interface and its adaptation in
-vfio-user, then follows device operation across the client--server boundary.
-It finally explains the protocol facilities for controlling migration,
-transferring device state, and tracking DMA writes.
+When a device model runs outside the VMM, the VMM must communicate with it 
+during both normal operation and migration. vfio-user supports this interaction 
+through a userspace client--server protocol that builds on concepts from Linux 
+VFIO. This section introduces the relationship between VFIO and vfio-user, 
+explains how the VMM interacts with an external device backend, and examines 
+the protocol mechanisms for device migration.
 
 \subsection{From VFIO to vfio-user}
 \label{sec:state:vfio-interface}
@@ -365,6 +364,152 @@ migration architecture and how it coordinates external device backends.
     \label{fig:vfio-user-migration-sequence}
 \end{figure}
 
+\section{Migration Support in Existing VMMs}
+\label{sec:state:vmm-migration}
+
+The migration mechanisms introduced in the previous sections require 
+integration into a VMM's migration framework to coordinate device state 
+with the rest of the VM. This section examines how QEMU and Cloud 
+Hypervisor implement this integration, focusing on their existing 
+migration capabilities and support for external devices.
+
+\subsection{Migration Infrastructure in QEMU}
+\label{sec:state:qemu-migration}
+
+QEMU provides a concrete example of how a VMM incorporates device state
+into VM migration. For device models implemented within its own process,
+QEMU directly manages their internal state. For example, its emulated
+xHCI USB controller maintains controller registers and runtime state
+inside the VMM~\cite{qemu-xhci-migration}. Restoring this controller at
+the destination requires preserving the state needed to continue its
+operation. Migratable device models typically identify this state
+through a versioned \texttt{VMStateDescription}, which specifies the
+fields to serialize and may include callbacks for additional processing
+during save and restore. The migration framework uses these descriptions
+to save device state into the VM migration stream and restore it at the
+destination~\cite{qemu-migration-framework}.
+
+For physical devices assigned through VFIO, QEMU relies on the host
+device's VFIO driver to expose the internal state required for migration.
+It accesses this state through the kernel VFIO migration interface and
+registers save and load handlers with its migration framework. These
+handlers transfer device state, while VM run-state handlers coordinate
+device execution with the migration lifecycle. During the final handover,
+QEMU stops the device and exports its remaining state, which the
+destination loads before resuming device execution. During memory migration, 
+VFIO devices may continue modifying guest memory through DMA while QEMU 
+transfers its contents. QEMU therefore uses VFIO dirty-page reporting to 
+track these changes and ensure that the destination receives the updated 
+memory pages~\cite{qemu-vfio-migration}.
+
+A similar challenge arises with vfio-user devices, where a separate
+userspace backend maintains the device state rather than exposing
+physical-device state through a kernel VFIO driver. QEMU's existing VFIO
+migration infrastructure therefore provides a basis for integrating these
+devices into the VM migration lifecycle. A patch series proposed by
+Komatsu in September 2026 follows this approach by extending the existing
+\texttt{VFIODeviceIOOps} abstraction to cover migration operations.
+The vfio-user frontend supplies socket-based implementations of these
+operations, allowing it to reuse QEMU's VFIO migration handlers.
+The series also integrates DMA dirty logging and registers vfio-user
+PCI devices with the migration framework. In the v2 series, device-state
+transfer uses stop-and-copy; the implementation does not enable
+device-state pre-copy or peer-to-peer migration states
+~\cite{komatsu2026vfio-user-migration}.
+
+Besides preserving device state, migration also requires the destination 
+to obtain access to the resources on which the VM depends. When both VMM 
+instances run on the same host, some of these resources can remain in 
+place rather than being copied or recreated. QEMU supports this approach 
+through its \emph{CheckPoint and Restart} (CPR) mechanism. In 
+\texttt{cpr-transfer} mode, a replacement QEMU process takes over the VM 
+while retaining its existing shared memory backing. QEMU transfers VM 
+state through the migration channel and passes file descriptors for 
+retained resources through a separate UNIX domain socket. This allows 
+the replacement process to reuse guest RAM without copying its contents 
+and, for supported VFIO and IOMMUFD configurations, preserve device 
+resources and pinned memory pages across the handover~\cite{qemu-cpr}.
+
+\subsection{Migration Support in Cloud Hypervisor}
+\label{sec:state:cloud-hypervisor-migration}
+
+Cloud Hypervisor provides mechanisms for migrating guest memory and restoring 
+VM component state. The following examine its memory migration capabilities, 
+particularly same-host memory reuse, and its support for device migration.
+
+\subsubsection{VM Migration in Cloud Hypervisor}
+\label{sec:state:cloud-hypervisor-vm-migration}
+
+Cloud Hypervisor is a Rust-based VMM designed for cloud workloads, with an 
+emphasis on minimal hardware emulation and support for virtio and passthrough 
+devices~\cite{cloud-hypervisor}. Its migration framework coordinates the 
+transfer of guest memory with the restoration of CPU and device state. For 
+guest memory, Cloud Hypervisor supports three migration modes: \texttt{precopy}, 
+\texttt{postcopy}, and \texttt{memfds}. The first two implement the 
+memory-transfer strategies introduced in Section~\ref{sec:state:memory-migration}, 
+while the third applies the resource-reuse approach for migration between VMM 
+processes on the same host~\cite{cloud-hypervisor-live-migration}.
+
+Similar to QEMU's \texttt{cpr-transfer}, Cloud Hypervisor's \texttt{memfds} 
+mode allows the destination to reuse existing guest-memory backing rather than 
+copying its contents. Cloud Hypervisor implements this by passing the backing 
+file descriptors over a UNIX domain socket. This requires shareable memory 
+backing, such as shared memory or suitable hugepage backing. The source sends 
+the descriptors together with information identifying their corresponding 
+memory regions, allowing the destination to map the same backing into its own 
+address space~\cite{cloud-hypervisor-live-migration,cloud-hypervisor-migration-code,cloud-hypervisor-memory-code}. 
+Since both VMM instances access the same underlying memory, this mode does not 
+require iterative RAM copying or the dirty-page tracking associated with it. 
+However, reusing guest memory does not eliminate the need to transfer CPU and 
+device state, which Cloud Hypervisor must still restore before the destination 
+resumes execution.
+
+\subsubsection{Device Migration in Cloud Hypervisor}
+\label{sec:state:cloud-hypervisor-device-migration}
+
+Cloud Hypervisor manages device state through its component migration framework. 
+Migratable components provide interfaces for pausing and resuming execution and 
+capturing their internal state, which the destination uses to reconstruct the 
+components. During migration, the framework collects component snapshots into 
+a hierarchical representation of the VM. For supported virtual devices, 
+including virtio devices, these interfaces allow their state to participate in 
+the VM migration process~\cite{cloud-hypervisor-migration-framework}.
+
+For physical devices assigned through kernel VFIO, however, Cloud Hypervisor 
+must obtain the device state from the host driver rather than an internal device 
+model. It integrates the \emph{VFIO Migration v2 interface} into its component 
+migration framework to support devices whose drivers provide migration 
+capabilities. When the VM pauses, Cloud Hypervisor stops device execution and 
+captures its state through \texttt{STOP\_COPY}. The destination restores this 
+state through \texttt{RESUMING} and reestablishes the necessary PCI 
+configuration and interrupt settings before device execution resumes. When 
+guest memory is transferred using pre-copy, VFIO devices may continue modifying 
+it through DMA. Cloud Hypervisor therefore incorporates VFIO dirty-page 
+reporting into memory migration to track these changes and ensure that the 
+destination receives the updated pages~\cite{cloud-hypervisor-vfio-migration}.
+
+The kernel VFIO integration demonstrates how Cloud Hypervisor can coordinate 
+migration for devices whose internal state resides outside the VMM. Cloud 
+Hypervisor also supports vfio-user devices during normal VM execution, but 
+these devices maintain their state in separate userspace backends rather than 
+exposing it through the kernel VFIO interface~\cite{cloud-hypervisor-vfio-user}. 
+Migrating them therefore requires the VMM to coordinate backend execution and 
+transfer backend state through the vfio-user connection. In the examined 
+implementation, however, the vfio-user frontend only snapshots common VMM-side 
+PCI state. Its migration lifecycle operations do not control the external 
+backend, and the client does not perform the migration-state transitions or 
+state transfers needed to preserve its internal state~\cite{cloud-hypervisor-vfio-user-code,cloud-hypervisor-migration-framework}.
+
+As a result, restoring the frontend snapshot alone cannot reconstruct the 
+complete device state, even when \texttt{memfds} allows the destination to 
+reuse the existing guest RAM. For migration modes that copy memory while the 
+device continues performing DMA, Cloud Hypervisor must also account for the 
+backend's writes to guest memory. Unlike the kernel VFIO path, the examined 
+vfio-user implementation does not yet integrate DMA dirty logging into memory 
+migration~\cite{cloud-hypervisor-vfio-user-code}. Supporting these operations 
+depends not only on Cloud Hypervisor's migration framework but also on the 
+capabilities exposed by the vfio-user client libraries and device backends. 
+The following section examines the existing migration support in these components.
 
 \cleardoublepage
 
